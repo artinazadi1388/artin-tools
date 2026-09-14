@@ -1,0 +1,68 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git zip unzip openjdk-17-jdk python3-pip autoconf libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev
+        pip install --upgrade buildozer cython
+
+    - name: Setup Android SDK
+      run: |
+        SDK_DIR=$HOME/.buildozer/android/platform/android-sdk
+        mkdir -p $SDK_DIR
+        cd $SDK_DIR
+        wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+        unzip -q commandlinetools-linux-11076708_latest.zip
+        mkdir -p cmdline-tools
+        mv cmdline-tools latest 2>/dev/null || true
+        mv latest cmdline-tools/latest 2>/dev/null || true
+        mkdir -p tools/bin
+        ln -sf $SDK_DIR/cmdline-tools/latest/bin/sdkmanager $SDK_DIR/tools/bin/sdkmanager
+        ln -sf $SDK_DIR/cmdline-tools/latest/bin/avdmanager $SDK_DIR/tools/bin/avdmanager
+        mkdir -p licenses
+        echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > licenses/android-sdk-license
+        echo "84831b9409646a918e30573bab4c9c91346d8abd" > licenses/android-sdk-preview-license
+        echo "d975f751698a77b662f1254ddbeed3901e976f5a" > licenses/intel-android-extra-license
+        echo "601085b94cd77f0b54ff86406957099ebe79c4d6" > licenses/android-googletv-license
+        yes | $SDK_DIR/cmdline-tools/latest/bin/sdkmanager --sdk_root=$SDK_DIR --licenses || true
+
+    - name: Fix buildozer.spec
+      run: |
+        sed -i 's/^android.archs.*/android.archs = arm64-v8a/' buildozer.spec
+
+    - name: Build APK with Buildozer
+      run: |
+        buildozer -v android debug 2>&1 | tee build.log
+      continue-on-error: true
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: artin-tools-apk
+        path: bin/*.apk
+
+    - name: Upload build log
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: build-log
+        path: build.log
